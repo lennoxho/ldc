@@ -102,6 +102,8 @@ elseif(D_VERSION EQUAL 2)
     set(DDMDFE_PATH dmd)
     set(LDC_EXE ldc2)
     set(LDMD_EXE ldmd2)
+    set(JIT_LIB jit_regex)
+    set(RUN_EXE runJit)
     set(LDCPROFDATA_EXE ldc-profdata)
     set(RUNTIME druntime)
     append("-DDMDV2" CMAKE_CXX_FLAGS)
@@ -111,6 +113,8 @@ endif()
 
 set(LDC_EXE_NAME ${PROGRAM_PREFIX}${LDC_EXE}${PROGRAM_SUFFIX})
 set(LDMD_EXE_NAME ${PROGRAM_PREFIX}${LDMD_EXE}${PROGRAM_SUFFIX})
+set(JIT_LIB_NAME ${PROGRAM_PREFIX}${JIT_LIB})
+set(RUN_EXE_NAME ${PROGRAM_PREFIX}${RUN_EXE}${PROGRAM_SUFFIX})
 set(LDCPROFDATA_EXE_NAME ${PROGRAM_PREFIX}${LDCPROFDATA_EXE}${PROGRAM_SUFFIX})
 
 file(MAKE_DIRECTORY
@@ -367,6 +371,11 @@ list(REMOVE_ITEM FE_SRC_D
 # exclude ldmd.d from ldc
 list(REMOVE_ITEM DRV_SRC_D
     ${PROJECT_SOURCE_DIR}/driver/ldmd.d
+    ${PROJECT_SOURCE_DIR}/driver/jitRegex.d
+)
+set(JIT_DRV_SRC_D ${DRV_SRC_D})
+list(REMOVE_ITEM JIT_DRV_SRC_D
+    ${PROJECT_SOURCE_DIR}/driver/main.d
 )
 set(LDC_CXX_SOURCE_FILES
     ${FE_HDR}
@@ -380,6 +389,13 @@ set(LDC_D_SOURCE_FILES
     ${GEN_SRC_D}
     ${DRV_SRC_D}
     ${IR_SRC_D}
+)
+set(JIT_D_SOURCE_FILES
+    ${FE_SRC_D}
+    ${GEN_SRC_D}
+    ${JIT_DRV_SRC_D}
+    ${IR_SRC_D}
+    ${PROJECT_SOURCE_DIR}/driver/jitRegex.d
 )
 
 source_group("Source Files\\${DDMDFE_PATH}" FILES ${FE_SRC_D})
@@ -575,8 +591,12 @@ endif()
 
 set(LDC_EXE_FULL ${PROJECT_BINARY_DIR}/bin/${LDC_EXE_NAME}${CMAKE_EXECUTABLE_SUFFIX})
 set(LDMD_EXE_FULL ${PROJECT_BINARY_DIR}/bin/${LDMD_EXE_NAME}${CMAKE_EXECUTABLE_SUFFIX})
+set(JIT_LIB_FULL ${PROJECT_BINARY_DIR}/lib/lib${JIT_LIB_NAME}.so)
+set(RUN_EXE_FULL ${PROJECT_BINARY_DIR}/bin/${RUN_EXE_NAME}${CMAKE_EXECUTABLE_SUFFIX})
 add_custom_target(${LDC_EXE} ALL DEPENDS ${LDC_EXE_FULL})
 add_custom_target(${LDMD_EXE} ALL DEPENDS ${LDMD_EXE_FULL})
+add_custom_target(${JIT_LIB} ALL DEPENDS ${JIT_LIB_FULL})
+add_custom_target(${RUN_EXE} ALL DEPENDS ${RUN_EXE_FULL})
 
 # Figure out how to link the main LDC executable, for which we need to take the
 # LLVM flags into account.
@@ -706,6 +726,45 @@ function(build_d_executable output_exe compiler_args linker_args compile_deps li
     endif()
 endfunction()
 
+function(build_d_shared_lib output_lib compiler_args linker_args compile_deps link_deps)
+    set(object_file ${output_lib}${CMAKE_CXX_OUTPUT_EXTENSION})
+    set(dflags "${D_COMPILER_FLAGS} ${DDMD_DFLAGS}")
+    separate_arguments(dflags UNIX_COMMAND "${dflags}")
+
+    add_custom_command(
+        OUTPUT ${object_file}
+        COMMAND ${D_COMPILER} -c ${dflags} -I${PROJECT_SOURCE_DIR}/${DDMDFE_PATH} -of${object_file} ${compiler_args}
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        DEPENDS ${compile_deps}
+    )
+
+    add_custom_command(
+        OUTPUT ${output_lib}
+        COMMAND ${CMAKE_CXX_COMPILER} -shared -o ${output_lib} ${object_file} ${linker_args} ${LDC_LINKERFLAG_LIST}
+        DEPENDS ${object_file} ${link_deps}
+    )
+endfunction()
+
+function(build_cpp_executable output_exe compiler_args linker_args compile_deps link_deps)
+    set(object_file ${output_exe}${CMAKE_CXX_OUTPUT_EXTENSION})
+    add_custom_command(
+        OUTPUT ${object_file}
+        COMMAND ${CMAKE_CXX_COMPILER} -Wall -O2 -c -o "${object_file}" ${compiler_args}
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        DEPENDS ${compile_deps}
+    )
+
+    set(translated_linker_flags "")
+    foreach(f ${linker_args})
+        list(APPEND translated_linker_flags "-L${f}")
+    endforeach()
+    add_custom_command(
+        OUTPUT ${output_exe}
+        COMMAND ${D_COMPILER} ${dflags} ${DDMD_LFLAGS} -of${output_exe} ${object_file} -link-defaultlib-shared ${translated_linker_flags} ${LDC_TRANSLATED_LINKER_FLAGS}
+        DEPENDS ${object_file} ${link_deps}
+    )
+endfunction()
+
 # CONFIG generator expressions need to be repeated due to https://cmake.org/Bug/view.php?id=14353
 if(MSVC_IDE)
     separate_arguments(LDC_FLAG_LIST WINDOWS_COMMAND "${LDC_TRANSLATED_LINKER_FLAGS} ${D_COMPILER_FLAGS} ${DDMD_DFLAGS} ${DDMD_LFLAGS}")
@@ -763,6 +822,30 @@ build_d_executable(
     "${LDMD_D_SOURCE_FILES}"
     "LDMD_CXX_LIB"
 )
+
+build_d_shared_lib(
+    "${JIT_LIB_FULL}"
+    "${JIT_D_SOURCE_FILES}"
+    "$<TARGET_LINKER_FILE:${LDC_LIB}>"
+    "${JIT_D_SOURCE_FILES}"
+    "${LDC_LIB}"
+)
+
+set(JIT_EXE_SOURCE_FILES "jitRegex/cpp/run.cpp")
+add_custom_command(
+    OUTPUT ${RUN_EXE_FULL}
+    COMMAND ${CMAKE_CXX_COMPILER} -Wall -O2 -g -o ${RUN_EXE_FULL} ${compiler_args} ${JIT_EXE_SOURCE_FILES} -L/mnt/d/lenno/source/ldc/build/lib -l${JIT_LIB} ${LDC_LINKERFLAG_LIST}
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+    DEPENDS ${JIT_EXE_SOURCE_FILES} ${JIT_LIB}
+)
+
+#build_cpp_executable(
+#    "${RUN_EXE_FULL}"
+#    "${JIT_EXE_SOURCE_FILES}"
+#    "${JIT_LIB_FULL} ${LDC_LINKERFLAG_LIST}"
+#    "${JIT_EXE_SOURCE_FILES}"
+#    "${JIT_LIB}"
+#)
 
 # Little helper.
 function(copy_and_rename_file source_path target_path)

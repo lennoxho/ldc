@@ -1,0 +1,20 @@
+{
+	"name": "jit_regex",
+    "sourcePaths": ["d"],
+    "targetName": "jit_regex",
+    "targetPath": "lib",
+    "targetType": "dynamicLibrary",
+    "buildTypes": {
+		"debug": {
+			"buildOptions": ["debugMode", "debugInfo"]
+		},
+		"release": {
+			"buildOptions": ["releaseMode", "optimize", "inline", "debugInfo"]
+		}
+	},
+	"dependencies": {
+		"dmd": {
+            "path": ".."
+        }
+	}
+}
