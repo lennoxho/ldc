@@ -1,0 +1,9 @@
+dmd
+dmd/root
+driver
+gen
+gen/dcompute
+gen/passes
+ir
+runtime/jit-rt/cpp-so
+runtime/phobos/etc/c/zlib

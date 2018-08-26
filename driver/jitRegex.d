@@ -1,6 +1,13 @@
 import core.atomic;
 import core.runtime;
 import dmd.frontend;
+import std.stdio;
+
+extern (C)
+void disableGC() {
+    import core.memory;
+    GC.disable();
+}
 
 extern (C)
 void init() {
@@ -36,6 +43,7 @@ uint makeJitRegex(const(char)* pattern)
     })(regString));
 
     m.fullSemantic;
+    //m.prettyPrint.writeln;
 
     uint handle = nextHandle;
     nextHandle.atomicOp!"+="(1);

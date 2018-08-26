@@ -832,9 +832,22 @@ build_d_shared_lib(
 )
 
 set(JIT_EXE_SOURCE_FILES "jitRegex/cpp/run.cpp")
+set(JIT_EXE_INCLUDE_DIRS 
+    .
+    /mnt/d/lenno/source/ldc/dmd
+    /mnt/d/lenno/source/ldc/dmd/root
+    /mnt/d/lenno/source/ldc/driver
+    /mnt/d/lenno/source/ldc/ir
+    /mnt/d/lenno/source/ldc/gen
+    ${LLVM_INCLUDE_DIRS})
+set(JIT_EXE_INCLUDE_ARGS "")
+foreach(f ${JIT_EXE_INCLUDE_DIRS})
+    list(APPEND JIT_EXE_INCLUDE_ARGS "-I${f}")
+endforeach()
+set(JIT_EXE_FLAGS "-DIN_LLVM" "-DLDC_LLVM_VER=${LDC_LLVM_VER}")
 add_custom_command(
     OUTPUT ${RUN_EXE_FULL}
-    COMMAND ${CMAKE_CXX_COMPILER} -Wall -O2 -g -o ${RUN_EXE_FULL} ${compiler_args} ${JIT_EXE_SOURCE_FILES} -L/mnt/d/lenno/source/ldc/build/lib -l${JIT_LIB} ${LDC_LINKERFLAG_LIST}
+    COMMAND ${CMAKE_CXX_COMPILER} -Wall -O2 -g -o ${RUN_EXE_FULL} ${JIT_EXE_FLAGS} ${compiler_args} ${JIT_EXE_SOURCE_FILES} ${JIT_EXE_INCLUDE_ARGS} -L/mnt/d/lenno/source/ldc/build/lib -l${JIT_LIB} ${LDC_LINKERFLAG_LIST}
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     DEPENDS ${JIT_EXE_SOURCE_FILES} ${JIT_LIB}
 )
